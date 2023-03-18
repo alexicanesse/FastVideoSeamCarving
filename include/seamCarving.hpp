@@ -11,12 +11,14 @@
 #include <opencv2/opencv.hpp>
 
 class seamCarving {
- private:
-    cv::Mat image;
-
  public:
+    cv::Mat3b image_;
+    cv::Mat1f image_grad_mag_;
+
     bool loadImage(const std::string &link);
-    void showImage();
+    void showImage(const cv::Mat &image, const std::string &title);
+
+    void computeGradMagImage();
 };
 
 #endif /* INCLUDE_SEAMCARVING_HPP_ */
