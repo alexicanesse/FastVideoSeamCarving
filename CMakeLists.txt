@@ -31,3 +31,8 @@ add_executable(seamCarving.out  ${CXXFILES})
 ## dependencies ###############################################################
 ###############################################################################
 
+# Find the OpenCV library
+find_package(OpenCV REQUIRED)
+
+# Link against the OpenCV library
+target_link_libraries(seamCarving.out ${OpenCV_LIBS})

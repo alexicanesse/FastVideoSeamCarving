@@ -7,6 +7,16 @@
 #ifndef INCLUDE_SEAMCARVING_HPP_
 #define INCLUDE_SEAMCARVING_HPP_
 
+/* C++ libraries */
+#include <opencv2/opencv.hpp>
 
+class seamCarving {
+ private:
+    cv::Mat image;
+
+ public:
+    bool loadImage(const std::string &link);
+    void showImage();
+};
 
 #endif /* INCLUDE_SEAMCARVING_HPP_ */
