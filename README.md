@@ -7,3 +7,4 @@ TODO
 ## Prerequisites 
 
 - openCV
+- boost

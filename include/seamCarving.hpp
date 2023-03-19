@@ -14,11 +14,22 @@ class seamCarving {
  public:
     cv::Mat3b image_;
     cv::Mat1f image_grad_mag_;
+    cv::Mat image_seams_;
 
     bool loadImage(const std::string &link);
     void showImage(const cv::Mat &image, const std::string &title);
 
     void computeGradMagImage();
+
+    void resize(double horizontal_factor, double vertical_factor);
+
+    /* Vertical */
+    cv::Mat1s findVerticalSeam();
+    void removeVerticalSeams(int k);
+    void addVerticalSeams(int k);
+    cv::Mat1s findHorizontalSeam();
+    void removeHorizontalSeams(int k);
+    void addHorizontalSeams(int k);
 };
 
 #endif /* INCLUDE_SEAMCARVING_HPP_ */

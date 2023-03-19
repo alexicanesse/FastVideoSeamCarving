@@ -33,6 +33,9 @@ add_executable(seamCarving.out  ${CXXFILES})
 
 # Find the OpenCV library
 find_package(OpenCV REQUIRED)
+find_package(Boost REQUIRED)
 
 # Link against the OpenCV library
 target_link_libraries(seamCarving.out ${OpenCV_LIBS})
+
+target_include_directories(seamCarving.out PUBLIC ${Boost_INCLUDE_DIR})
