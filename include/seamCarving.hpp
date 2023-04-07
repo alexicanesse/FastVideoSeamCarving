@@ -13,8 +13,12 @@
 class seamCarving {
  public:
     cv::Mat3b image_;
+    cv::Mat1b gray_image_;
     cv::Mat1f image_grad_mag_;
     cv::Mat image_seams_;
+
+    int width_;
+    int height_;
 
     bool loadImage(const std::string &link);
     void showImage(const cv::Mat &image, const std::string &title);
@@ -24,12 +28,10 @@ class seamCarving {
     void resize(double horizontal_factor, double vertical_factor);
 
     /* Vertical */
-    cv::Mat1s findVerticalSeam();
+    std::vector<int> findVerticalSeam();
     void removeVerticalSeams(int k);
-    void addVerticalSeams(int k);
-    cv::Mat1s findHorizontalSeam();
+    std::vector<int> findHorizontalSeam();
     void removeHorizontalSeams(int k);
-    void addHorizontalSeams(int k);
 };
 
 #endif /* INCLUDE_SEAMCARVING_HPP_ */
