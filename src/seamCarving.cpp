@@ -59,6 +59,12 @@ bool seamCarving::loadImage(const std::string &link) {
         return false;
     }
 
+    /* Convert the image to grayscale */
+    cv::cvtColor(image_, gray_image_, cv::COLOR_BGR2GRAY);
+
+    cv::Sobel(gray_image_, grad_x_, CV_32F, 1, 0);
+    cv::Sobel(gray_image_, grad_y_, CV_32F, 0, 1);
+
     width_  = image_.cols;
     height_ = image_.rows;
 
@@ -74,20 +80,20 @@ void seamCarving::showImage(const cv::Mat &image, const std::string &title) {
 }
 
 void seamCarving::computeGradMagImage() {
-    /* Convert the image to grayscale */
-    cv::cvtColor(image_, gray_image_, cv::COLOR_BGR2GRAY);
-
     /* Compute gradients using Sobel operator */
     cv::Mat1f grad_x, grad_y;
     cv::Sobel(gray_image_, grad_x, CV_32F, 1, 0);
     cv::Sobel(gray_image_, grad_y, CV_32F, 0, 1);
 
+    //cv::Mat1b diff;
+    //cv::compare(grad_x, grad_x_, diff, cv::CMP_NE);
+    //std::cout << cv::countNonZero(diff) << "\n";
+
     /* Compute gradient magnitude */
-    cv::Mat1f grad_mag;
-    cv::magnitude(grad_x, grad_y, grad_mag);
+    cv::magnitude(grad_x, grad_y, image_grad_mag_);
 
     /* Normalize the gradient magnitude image and store it */
-    cv::normalize(grad_mag, image_grad_mag_, 0, 1, cv::NORM_MINMAX);
+    cv::normalize(image_grad_mag_, image_grad_mag_, 0, 1, cv::NORM_MINMAX);
 }
 
 std::vector<int> seamCarving::findVerticalSeam() {
@@ -137,29 +143,53 @@ std::vector<int> seamCarving::findVerticalSeam() {
 }
 
 void seamCarving::removeVerticalSeams(int k) {
+    std::vector<std::vector<int>> seams_to_remove;
+
     boost::timer::progress_display pd(k);
     for (int step = 0; step < k; ++step) {
         ++pd;
 
         std::vector<int> seam = findVerticalSeam();
+        seams_to_remove.push_back(seam);
 
         /* Used to fill empty space left. */
-        cv::Mat dummy(1, image_.cols - width_ + 1, CV_8UC3, cv::Vec3b(0, 0, 0));
+        cv::Mat dummy(1, gray_image_.cols - width_ + 1, CV_8UC3, cv::Vec3b(0, 0, 0));
 
         /* Remove the seam. */
         cv::parallel_for_(cv::Range(0, height_), [&](const cv::Range& range) {
+            thread_local int j;
+            thread_local cv::Mat new_row;
             for (int i = range.start; i < range.end; ++i) {
-                cv::Mat new_row;
-                int j = seam[i];
+                j = seam[i];
                 if (j + 1 != width_) {
-                    image_.row(i).colRange(j + 1, width_).copyTo(new_row);
-                    new_row.copyTo(image_.row(i).colRange(j, width_ - 1));
+                    gray_image_.row(i).colRange(j + 1, width_).copyTo(new_row);
+                    new_row.copyTo(gray_image_.row(i).colRange(j, width_ - 1));
                 }
-                image_(i, width_ - 1) = {0, 0, 0};
             }
         });
 
         --width_;
+
+        cv::Rect roi(0, 0, width_, height_);
+        gray_image_ = gray_image_(roi);
+    }
+
+    /* Remove seams in the colored image. */
+    thread_local int j;
+    thread_local cv::Mat new_row;
+    int width = image_.cols;
+    for (const auto &seam : seams_to_remove) {
+        cv::parallel_for_(cv::Range(0, height_), [&](const cv::Range &range) {
+            for (int i = range.start; i < range.end; ++i) {
+                j = seam[i];
+                if (j + 1 != width) {
+                    image_.row(i).colRange(j + 1, width).copyTo(new_row);
+                    new_row.copyTo(image_.row(i).colRange(j, width - 1));
+                }
+                image_(i, width - 1) = {0, 0, 0};
+            }
+        });
+        --width;
     }
 }
 
@@ -208,28 +238,53 @@ std::vector<int> seamCarving::findHorizontalSeam() {
 }
 
 void seamCarving::removeHorizontalSeams(int k) {
+    std::vector<std::vector<int>> seams_to_remove;
+
     boost::timer::progress_display pd(k);
     for (int step = 0; step < k; ++step) {
         ++pd;
 
         std::vector<int> seam = findHorizontalSeam();
+        seams_to_remove.push_back(seam);
 
         /* Used to fill empty space left. */
-        cv::Mat dummy(image_.rows - height_ + 1, 1, CV_8UC3, cv::Vec3b(0, 0, 0));
+        cv::Mat dummy(gray_image_.rows - height_ + 1, 1, CV_8UC3, cv::Vec3b(0, 0, 0));
 
         /* Remove the seam. */
         cv::parallel_for_(cv::Range(0, width_), [&](const cv::Range& range) {
+            thread_local int i;
+            thread_local cv::Mat new_column;
             for (int j = range.start; j < range.end; ++j) {
-                cv::Mat new_column;
-                int i = seam[j];
+                i = seam[j];
                 if (i + 1 != height_) {
-                    image_.rowRange(1, height_).col(j).copyTo(new_column);
-                    new_column.copyTo(image_.rowRange(1, height_).col(j));
+                    gray_image_.rowRange(i + 1, height_).col(j).copyTo(new_column);
+                    new_column.copyTo(gray_image_.rowRange(i, height_ - 1).col(j));
                 }
-                image_(height_ - 1, j) = {0, 0, 0};
+                gray_image_(height_ - 1, j) = {0};
             }
         });
 
         --height_;
+
+        cv::Rect roi(0, 0, width_, height_);
+        gray_image_ = gray_image_(roi);
+    }
+
+    /* Remove seams in the colored image. */
+    thread_local int i;
+    thread_local cv::Mat new_column;
+    int height = image_.rows;
+    for (const auto &seam : seams_to_remove) {
+        cv::parallel_for_(cv::Range(0, width_), [&](const cv::Range& range) {
+            for (int j = range.start; j < range.end; ++j) {
+                i = seam[j];
+                if (i + 1 != height) {
+                    image_.rowRange(i + 1, height).col(j).copyTo(new_column);
+                    new_column.copyTo(image_.rowRange(i, height - 1).col(j));
+                }
+            }
+        });
+
+        --height;
     }
 }

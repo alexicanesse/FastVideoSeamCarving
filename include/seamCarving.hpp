@@ -16,6 +16,8 @@ class seamCarving {
     cv::Mat1b gray_image_;
     cv::Mat1f image_grad_mag_;
     cv::Mat image_seams_;
+    cv::Mat1f grad_x_;
+    cv::Mat1f grad_y_;
 
     int width_;
     int height_;
