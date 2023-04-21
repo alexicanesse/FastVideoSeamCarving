@@ -12,28 +12,32 @@
 
 class seamCarving {
  public:
-    cv::Mat3b image_;
-    cv::Mat1b gray_image_;
-    cv::Mat1f image_grad_mag_;
-    cv::Mat image_seams_;
-    cv::Mat1f grad_x_;
-    cv::Mat1f grad_y_;
+    int duration_ = 0;
+
+    /* Video */
+    std::vector<cv::Mat3b> video_;
+    std::vector<cv::Mat1b> gray_video_;
+    cv::Mat1f content_grad_mag_;
+    float fps_;
 
     int width_;
     int height_;
+    int frames_;
 
-    bool loadImage(const std::string &link);
-    void showImage(const cv::Mat &image, const std::string &title);
+    bool loadContent(const std::string &link);
 
-    void computeGradMagImage();
+    template <typename T>
+    void showcontent(const std::vector<cv::Mat_<T>> &video,
+                     const std::string &title);
 
-    void resize(double horizontal_factor, double vertical_factor);
+    void computeGradMagContent();
 
-    /* Vertical */
-    std::vector<int> findVerticalSeam();
-    void removeVerticalSeams(int k);
-    std::vector<int> findHorizontalSeam();
-    void removeHorizontalSeams(int k);
+    void resizeContent(double horizontal_factor, double vertical_factor);
+
+    std::vector<int> findVerticalSeamContent();
+    void removeVerticalSeamsContent(int k);
+    std::vector<int> findHorizontalSeamContent();
+    void removeHorizontalSeamsContent(int k);
 };
 
 #endif /* INCLUDE_SEAMCARVING_HPP_ */
