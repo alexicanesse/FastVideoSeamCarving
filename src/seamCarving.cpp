@@ -19,7 +19,7 @@ int main() {
 
     seamCarving sc;
 
-    sc.loadContent("tests/f2_480p.m4v");
+    sc.loadContent("tests/f2_720p.m4v");
     //sc.showcontent(sc.video_, "Before");
 
     auto start = std::chrono::high_resolution_clock::now();
@@ -38,15 +38,15 @@ int main() {
 
 void seamCarving::resizeContent(double horizontal_factor, double vertical_factor) {
     if (vertical_factor < 1) {
-        removeHorizontalSeamsContent(height_ - height_ * vertical_factor);
-        cv::Rect roi(0, 0, width_, height_);
+        removeHorizontalSeamsContent(height_full_ - height_full_ * vertical_factor);
+        cv::Rect roi(0, 0, width_full_, height_full_);
         for (auto &image : video_)
             image = image(roi);
     }
 
     if (horizontal_factor < 1) {
-        removeVerticalSeamsContent(width_ - width_ * horizontal_factor);
-        cv::Rect roi(0, 0, width_, height_);
+        removeVerticalSeamsContent(width_full_ - width_full_ * horizontal_factor);
+        cv::Rect roi(0, 0, width_full_, height_full_);
         for (auto &image : video_)
             image = image(roi);
     }
@@ -80,10 +80,13 @@ bool seamCarving::loadContent(const std::string &link) {
     gray_video_.resize(video_.size());
     for (int i = 0; i < gray_video_.size(); ++i) {
         cv::cvtColor(video_[i], gray_video_[i], cv::COLOR_BGR2GRAY);
+        resize(gray_video_[i], gray_video_[i], cv::Size(gray_video_[i].cols/2, gray_video_[i].rows/2));
     }
 
-    width_  = video_[0].cols;
-    height_ = video_[0].rows;
+    width_  = gray_video_[0].cols;
+    height_ = gray_video_[0].rows;
+    width_full_  = video_[0].cols;
+    height_full_ = video_[0].rows;
     frames_ = video_.size();
 
     return true;
@@ -139,32 +142,31 @@ std::vector<int> seamCarving::findVerticalSeamContent() {
     computeGradMagContent();
 
     /* Initialize rolling array */
-    std::vector<float> prev_row(width_);
-    std::vector<float> curr_row(width_);
-    content_grad_mag_.row(0).copyTo(curr_row);
+    std::vector<float> rolling_array(width_);
+    content_grad_mag_.row(0).copyTo(rolling_array);
 
-    int idx;
+    float prev_row_j;
     float min_energy, temp_energy;
     for (int i = 1; i < height_; ++i) {
-        /* Swap rows */
-        swap(prev_row, curr_row);
-
         /* Left edge */
-        if (prev_row[0] <= prev_row[1] + abs(content_grad_mag_(i - 1, 0) - content_grad_mag_(i, 1))) {
-            curr_row[0] = prev_row[0] + content_grad_mag_(i, 0) ;
+        if (rolling_array[0] <= rolling_array[1] + abs(content_grad_mag_(i - 1, 0) - content_grad_mag_(i, 1))) {
+            temp_energy = rolling_array[0] + content_grad_mag_(i, 0) ;
             backtrack(i, 0) = 0;
         } else {
-            curr_row[0] = prev_row[1] + content_grad_mag_(i, 0) + abs(content_grad_mag_(i - 1, 0) - content_grad_mag_(i, 1));
+            temp_energy = rolling_array[1] + content_grad_mag_(i, 0) + abs(content_grad_mag_(i - 1, 0) - content_grad_mag_(i, 1));
             backtrack(i, 0) = 1;
         }
 
+        prev_row_j = rolling_array[0]; /* Store previous row value for the rolling array */
+        rolling_array[0] = temp_energy;
+
         for (int j = 1; j < width_; ++j) {
-            min_energy = prev_row[j - 1]
+            min_energy = prev_row_j
                            + abs(content_grad_mag_(i, j - 1) - content_grad_mag_(i, j + 1))
                            + abs(content_grad_mag_(i - 1, j) - content_grad_mag_(i, j - 1));
             backtrack(i, j) = j - 1;
 
-            temp_energy = prev_row[j]
+            temp_energy = rolling_array[j]
                             + abs(content_grad_mag_(i, j - 1) - content_grad_mag_(i, j + 1));
             if (temp_energy < min_energy) {
                 min_energy = temp_energy;
@@ -172,7 +174,7 @@ std::vector<int> seamCarving::findVerticalSeamContent() {
             }
 
             if (j + 1 != width_) {
-                temp_energy = prev_row[j + 1]
+                temp_energy = rolling_array[j + 1]
                               + abs(content_grad_mag_(i, j - 1) - content_grad_mag_(i, j + 1))
                               + abs(content_grad_mag_(i - 1, j) - content_grad_mag_(i, j + 1));
                 if (temp_energy < min_energy) {
@@ -181,14 +183,13 @@ std::vector<int> seamCarving::findVerticalSeamContent() {
                 }
             }
 
-            curr_row[j] = min_energy + content_grad_mag_(i, j);
+            prev_row_j = rolling_array[j]; /* Store previous row value for the rolling array */
+            rolling_array[j] = min_energy + content_grad_mag_(i, j);
         }
     }
 
     /* Find the position of the smallest elements in the last row of the cumulative energy */
-    int j = 0;
-    for (int i = 0; i < width_; ++i)
-        if (curr_row[i] < curr_row[j]) j = i;
+    int j = std::min_element(rolling_array.begin(), rolling_array.end()) - rolling_array.begin();
 
     std::vector<int> seam(height_);
     seam[height_ - 1] = j;
@@ -228,6 +229,7 @@ void seamCarving::removeVerticalSeamsContent(int k) {
         });
 
         --width_;
+        width_full_ -= 2;
 
         cv::Rect roi(0, 0, width_, height_);
         for (auto &gray_image : gray_video_)
@@ -243,14 +245,16 @@ void seamCarving::removeVerticalSeamsContent(int k) {
             int width = video_[f].cols;
             for (const auto &seam : seams_to_remove) {
                 for (int i = 0; i < height_; ++i) {
-                    j = seam[i];
+                    j = 2*seam[i];
                     if (j + 1 != width) {
-                        video_[f].row(i).colRange(j + 1, width).copyTo(new_row);
-                        new_row.copyTo(video_[f].row(i).colRange(j, width - 1));
+                        video_[f].row(2 * i).colRange(j + 2, width).copyTo(new_row);
+                        new_row.copyTo(video_[f].row(2 * i).colRange(j, width - 2));
+                        video_[f].row(2 * i + 1).colRange(j + 2, width).copyTo(new_row);
+                        new_row.copyTo(video_[f].row(2 * i + 1).colRange(j, width - 2));
                     }
                     video_[f](i, width - 1) = {0, 0, 0};
                 }
-                --width;
+                width -= 2;
             }
         }
     });
@@ -262,32 +266,31 @@ std::vector<int> seamCarving::findHorizontalSeamContent() {
     computeGradMagContent();
 
     /* Initialize rolling array */
-    std::vector<float> prev_col(height_);
-    std::vector<float> curr_col(height_);
-    content_grad_mag_.col(0).copyTo(curr_col);
+    std::vector<float> rolling_array(height_);
+    content_grad_mag_.col(0).copyTo(rolling_array);
 
-    int idx;
+    float prev_col_i;
     float min_energy, temp_energy;
     for (int j = 1; j < width_; ++j) {
-        /* Swap columns */
-        swap(prev_col, curr_col);
-
         /* Left edge */
-        if (prev_col[0] <= prev_col[1] + abs(content_grad_mag_(0, j - 1) - content_grad_mag_(1, j))) {
-            curr_col[0] = prev_col[0] + content_grad_mag_(0, j);
+        if (rolling_array[0] <= rolling_array[1] + abs(content_grad_mag_(0, j - 1) - content_grad_mag_(1, j))) {
+            temp_energy = rolling_array[0] + content_grad_mag_(0, j);
             backtrack(0, j) = 0;
         } else {
-            curr_col[0] = prev_col[1] + abs(content_grad_mag_(0, j - 1) - content_grad_mag_(1, j));
+            temp_energy = rolling_array[1] + abs(content_grad_mag_(0, j - 1) - content_grad_mag_(1, j));
             backtrack(0, j) = 1;
         }
 
+        prev_col_i = rolling_array[0]; /* Store previous col value for the rolling array */
+        rolling_array[0] = temp_energy;
+
         for (int i = 1; i < height_; ++i) {
-            min_energy = prev_col[i - 1]
+            min_energy = prev_col_i
                             + abs(content_grad_mag_(i - 1, j) - content_grad_mag_(i, j - 1))
                             + abs(content_grad_mag_(i - 1, j) - content_grad_mag_(i + 1, j));
             backtrack(i, j) = i - 1;
 
-            temp_energy = prev_col[i]
+            temp_energy = rolling_array[i]
                           + abs(content_grad_mag_(i - 1, j) - content_grad_mag_(i + 1, j));
             if (temp_energy < min_energy) {
                 min_energy = temp_energy;
@@ -295,7 +298,7 @@ std::vector<int> seamCarving::findHorizontalSeamContent() {
             }
 
             if (i + 1 != height_) {
-                temp_energy = prev_col[i + 1]
+                temp_energy = rolling_array[i + 1]
                               + abs(content_grad_mag_(i, j - 1) - content_grad_mag_(i + 1, j))
                               + abs(content_grad_mag_(i - 1, j) - content_grad_mag_(i + 1, j));
                 if (temp_energy < min_energy) {
@@ -304,16 +307,13 @@ std::vector<int> seamCarving::findHorizontalSeamContent() {
                 }
             }
 
-            curr_col[i] = min_energy + content_grad_mag_(i, j);
+            prev_col_i = rolling_array[i]; /* Store previous col value for the rolling array */
+            rolling_array[i] = min_energy + content_grad_mag_(i, j);
         }
     }
 
     /* Find the position of the smallest elements in the last column of the cumulative energy */
-    int i = 0;
-    for (int j = 0; j < height_; ++j) {
-        if (curr_col[j] < curr_col[i])
-            i = j;
-    }
+    int i = std::min_element(rolling_array.begin(), rolling_array.end()) - rolling_array.begin();
 
     std::vector<int> seam(width_);
     for (int j = width_ - 1; j >= 0; --j) {
@@ -355,6 +355,7 @@ void seamCarving::removeHorizontalSeamsContent(int k) {
         });
 
         --height_;
+        height_full_ -= 2;
 
         cv::Rect roi(0, 0, width_, height_);
         for (auto &gray_image : gray_video_)
@@ -369,13 +370,15 @@ void seamCarving::removeHorizontalSeamsContent(int k) {
             int height = video_[f].rows;
             for (const auto &seam : seams_to_remove) {
                 for (int j = 0; j < width_; ++j) {
-                    i = seam[j];
-                    if (i + 1 != height) {
-                        video_[f].rowRange(i + 1, height).col(j).copyTo(new_column);
-                        new_column.copyTo(video_[f].rowRange(i, height - 1).col(j));
+                    i = 2*seam[j];
+                    if (i + 2 != height) {
+                        video_[f].rowRange(i + 2, height).col(2 * j).copyTo(new_column);
+                        new_column.copyTo(video_[f].rowRange(i, height - 2).col(2 * j));
+                        video_[f].rowRange(i + 2, height).col(2 * j + 1).copyTo(new_column);
+                        new_column.copyTo(video_[f].rowRange(i, height - 2).col(2 * j + 1));
                     }
                 }
-                --height;
+                height -= 2;
             }
         }
     });

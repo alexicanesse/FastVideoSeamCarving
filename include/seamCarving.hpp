@@ -22,6 +22,8 @@ class seamCarving {
 
     int width_;
     int height_;
+    int width_full_;
+    int height_full_;
     int frames_;
 
     bool loadContent(const std::string &link);
