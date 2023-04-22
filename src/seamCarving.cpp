@@ -23,14 +23,13 @@ int main() {
     //sc.showcontent(sc.video_, "Before");
 
     auto start = std::chrono::high_resolution_clock::now();
-    sc.resizeContent(1, .85);
+    sc.resizeContent(0.95, .95);
+    //sc.computeGradMagContent();
     //sc.showcontent(std::vector<cv::Mat1f>(1, sc.content_grad_mag_), "title");
     //sc.showcontent(sc.gray_video_, "title");
-    sc.showcontent(sc.video_, "After");
-
-
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    std::cout << "Time taken : " << duration.count() << "ms\n";
 
     sc.showcontent(sc.video_, "After");
 
@@ -112,23 +111,26 @@ void seamCarving::showcontent(const std::vector<cv::Mat_<T>> &video,
 }
 
 void seamCarving::computeGradMagContent() {
-    cv::Mat temp_grad_mag = cv::Mat1f::zeros(height_, width_);
-    content_grad_mag_     = cv::Mat1f::zeros(height_, width_);
-    for (int i = 0; i < frames_; ++i) {
-        /* Compute gradients using Sobel operator */
-        cv::Mat1f grad_x, grad_y;
-        cv::Sobel(gray_video_[i], grad_x, CV_32F, 1, 0);
-        cv::Sobel(gray_video_[i], grad_y, CV_32F, 0, 1);
+    cv::Mat temp_grad_mag        = cv::Mat1f::zeros(height_, width_);
+    cv::Mat content_grad_mag_max = cv::Mat1f::zeros(height_, width_);
 
-        /* Compute gradient magnitude */
-        cv::magnitude(grad_x, grad_y, temp_grad_mag);
+    std::mutex mutex;
+    cv::parallel_for_(cv::Range(0, frames_), [&](const cv::Range& range) {
+        for (int f = range.start; f < range.end; ++f) {
+            /* Compute gradients using Sobel operator */
+            cv::Mat1f grad_x, grad_y;
+            cv::Sobel(gray_video_[f], grad_x, CV_32F, 1, 0);
+            cv::Sobel(gray_video_[f], grad_y, CV_32F, 0, 1);
 
-        /* Normalize the gradient magnitude image and store it */
-        cv::normalize(temp_grad_mag, temp_grad_mag, 0, 1, cv::NORM_MINMAX);
-
-        cv::max(content_grad_mag_, temp_grad_mag, content_grad_mag_);
-
-    }
+            /* Compute gradient magnitude */
+            mutex.lock();
+            cv::magnitude(grad_x, grad_y, temp_grad_mag);
+            cv::max(content_grad_mag_max, temp_grad_mag, content_grad_mag_max);
+            mutex.unlock();
+        }
+    });
+    content_grad_mag_ = content_grad_mag_max;
+    cv::normalize(content_grad_mag_, content_grad_mag_, 0, 1, cv::NORM_MINMAX);
 }
 
 std::vector<int> seamCarving::findVerticalSeamContent() {
