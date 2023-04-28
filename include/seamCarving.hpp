@@ -27,6 +27,8 @@ class seamCarving {
     int frames_;
 
     bool loadContent(const std::string &link);
+    template <typename T>
+    void saveContent(const std::string &link, const std::vector<cv::Mat_<T>> &video);
 
     template <typename T>
     void showcontent(const std::vector<cv::Mat_<T>> &video,
