@@ -14,24 +14,80 @@
 #include <opencv2/opencv.hpp>
 #include <boost/timer/progress_display.hpp>
 
-int main() {
+/* The following pragma are used to removed deprecation warning from boost
+ * header files. Using them avoid to remove this warning from the entire project.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#include <boost/program_options.hpp>
+#pragma GCC diagnostic pop
+
+int main(int argc, char** argv) {
+    boost::program_options::options_description desc("Allowed options");
+    desc.add_options()
+            ("help,h", "print the help message")
+            ("input,i", boost::program_options::value<std::string>(), "set the input file")
+            ("output,o", boost::program_options::value<std::string>(), "set the output file")
+            ("show_result,r", "show the output file")
+            ("show_energy_map,e", "show the energy map");
+
+    boost::program_options::variables_map vm;
+    boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), vm);
+    try{
+        boost::program_options::notify(vm);
+    }
+    catch (std::exception& e) {
+        std::cout << "Error: " << e.what() << std::endl;
+        std::cout << desc << std::endl;
+        return 1;
+    }
+
+    boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), vm);
+
+    if (vm.count("help")) {
+        std::cout << desc << "\n";
+        return 1;
+    }
+
+    std::string input_file;
+    if (vm.count("input")) {
+        input_file = vm["input"].as<std::string>();
+    } else{
+        std::cerr << "--input option is requiered";
+        return 0;
+    }
+
+    std::string output_file;
+    if (vm.count("output")) {
+        output_file = vm["output"].as<std::string>();
+    } else{
+        std::cerr << "--output option is requiered";
+        return 0;
+    }
+
+    bool show_result     = vm.count("show_result");
+    bool show_energy_map = vm.count("show_energy_map");
+
     cv::setNumThreads(8);
 
     seamCarving sc;
+    sc.loadContent(input_file);
 
-    sc.loadContent("tests/f2_720p.m4v");
-    //sc.showcontent(sc.video_, "Before");
+    if (show_energy_map) {
+        sc.computeGradMagContent();
+        sc.showcontent(std::vector<cv::Mat1f>(1, sc.content_grad_mag_), "Energy map");
+    }
 
     auto start = std::chrono::high_resolution_clock::now();
-    sc.resizeContent(0.95, .95);
-    //sc.computeGradMagContent();
-    //sc.showcontent(std::vector<cv::Mat1f>(1, sc.content_grad_mag_), "title");
-    //sc.showcontent(sc.gray_video_, "title");
+    sc.resizeContent(0.98, .98);
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
     std::cout << "Time taken : " << duration.count() << "ms\n";
 
-    sc.showcontent(sc.video_, "After");
+    sc.saveContent(output_file, sc.video_);
+
+    if (show_result)
+        sc.showcontent(sc.video_, "Result");
 
     return 0;
 }
@@ -93,6 +149,30 @@ bool seamCarving::loadContent(const std::string &link) {
 }
 
 template <typename T>
+void seamCarving::saveContent(const std::string &link, const std::vector<cv::Mat_<T>> &video) {
+    if (video.size() == 1) {
+        cv::normalize(video[0], video[0], 0, 255, cv::NORM_MINMAX);
+        cv::imwrite(link, video[0]);
+        return;
+    }
+
+    int fourcc = cv::VideoWriter::fourcc('m', 'p', '4', 'v');
+    cv::Size frame_size = video[0].size();
+
+    cv::VideoWriter video_obj(link, fourcc, fps_, frame_size, true);
+
+    if (!video_obj.isOpened()) {
+        std::cerr << "Could not open the output video file for write.\n";
+        return;
+    }
+
+    for (int i = 0; i < frames_; i++)
+        video_obj.write(video[i]);
+
+    video_obj.release();
+}
+
+template <typename T>
 void seamCarving::showcontent(const std::vector<cv::Mat_<T>> &video,
                               const std::string &title) {
 
@@ -116,6 +196,9 @@ void seamCarving::showcontent(const std::vector<cv::Mat_<T>> &video,
 void seamCarving::computeGradMagContent() {
     cv::Mat temp_grad_mag        = cv::Mat1f::zeros(height_, width_);
     cv::Mat content_grad_mag_max = cv::Mat1f::zeros(height_, width_);
+    cv::Mat temporal             = cv::Mat1f::zeros(height_, width_);
+
+    std::vector<cv::Mat> all_nrj(frames_);
 
     std::mutex mutex;
     cv::parallel_for_(cv::Range(0, frames_), [&](const cv::Range& range) {
@@ -128,10 +211,25 @@ void seamCarving::computeGradMagContent() {
             /* Compute gradient magnitude */
             mutex.lock();
             cv::magnitude(grad_x, grad_y, temp_grad_mag);
+
+            temp_grad_mag.copyTo(all_nrj[f]);
             cv::max(content_grad_mag_max, temp_grad_mag, content_grad_mag_max);
             mutex.unlock();
         }
     });
+
+    if (frames_ > 1) {
+        for (int f = 0; f < frames_ - 1; ++f) {
+            temp_grad_mag = all_nrj[f + 1] - all_nrj[f];
+            cv::normalize(temp_grad_mag, temp_grad_mag, 0, 1, cv::NORM_MINMAX);
+            cv::max(temporal, temp_grad_mag, temporal);
+        }
+    }
+
+    cv::normalize(content_grad_mag_max, content_grad_mag_max, 0, 1, cv::NORM_MINMAX);
+    cv::normalize(temporal, temporal, 0, 1, cv::NORM_MINMAX);
+
+    content_grad_mag_max += temporal;
     content_grad_mag_ = content_grad_mag_max;
     cv::normalize(content_grad_mag_, content_grad_mag_, 0, 1, cv::NORM_MINMAX);
 }
