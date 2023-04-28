@@ -28,6 +28,8 @@ int main(int argc, char** argv) {
             ("help,h", "print the help message")
             ("input,i", boost::program_options::value<std::string>(), "set the input file")
             ("output,o", boost::program_options::value<std::string>(), "set the output file")
+            ("h_scale", boost::program_options::value<float>(), "set the horizontal scaling factor (must be <= 1 and >= 0)")
+            ("v_scale", boost::program_options::value<float>(), "set the vertical scaling factor (must be <= 1 and >= 0)")
             ("show_result,r", "show the output file")
             ("show_energy_map,e", "show the energy map");
 
@@ -65,6 +67,22 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    float h_scale = 1;
+    if (vm.count("h_scale")) {
+        if (vm["h_scale"].as<float>() <= 1 and vm["h_scale"].as<float>() >= 0)
+            h_scale = vm["h_scale"].as<float>();
+        else
+            std::cout << "Invalide h_scale argument ignored.\n";
+    }
+
+    float v_scale = 1;
+    if (vm.count("v_scale")) {
+        if (vm["v_scale"].as<float>() <= 1 and vm["v_scale"].as<float>() >= 0)
+            v_scale = vm["v_scale"].as<float>();
+        else
+            std::cout << "Invalide v_scale argument ignored.\n";
+    }
+
     bool show_result     = vm.count("show_result");
     bool show_energy_map = vm.count("show_energy_map");
 
@@ -79,7 +97,7 @@ int main(int argc, char** argv) {
     }
 
     auto start = std::chrono::high_resolution_clock::now();
-    sc.resizeContent(0.98, .98);
+    sc.resizeContent(h_scale, v_scale);
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
     std::cout << "Time taken : " << duration.count() << "ms\n";
@@ -94,14 +112,14 @@ int main(int argc, char** argv) {
 
 void seamCarving::resizeContent(double horizontal_factor, double vertical_factor) {
     if (vertical_factor < 1) {
-        removeHorizontalSeamsContent(height_full_ - height_full_ * vertical_factor);
+        removeHorizontalSeamsContent(height_ - height_ * vertical_factor);
         cv::Rect roi(0, 0, width_full_, height_full_);
         for (auto &image : video_)
             image = image(roi);
     }
 
     if (horizontal_factor < 1) {
-        removeVerticalSeamsContent(width_full_ - width_full_ * horizontal_factor);
+        removeVerticalSeamsContent(width_ - width_ * horizontal_factor);
         cv::Rect roi(0, 0, width_full_, height_full_);
         for (auto &image : video_)
             image = image(roi);
@@ -344,13 +362,12 @@ void seamCarving::removeVerticalSeamsContent(int k) {
             for (const auto &seam : seams_to_remove) {
                 for (int i = 0; i < height_; ++i) {
                     j = 2*seam[i];
-                    if (j + 1 != width) {
+                    if (j + 2 != width) {
                         video_[f].row(2 * i).colRange(j + 2, width).copyTo(new_row);
                         new_row.copyTo(video_[f].row(2 * i).colRange(j, width - 2));
                         video_[f].row(2 * i + 1).colRange(j + 2, width).copyTo(new_row);
                         new_row.copyTo(video_[f].row(2 * i + 1).colRange(j, width - 2));
                     }
-                    video_[f](i, width - 1) = {0, 0, 0};
                 }
                 width -= 2;
             }
@@ -440,7 +457,6 @@ void seamCarving::removeHorizontalSeamsContent(int k) {
             for (int f = range.start; f < range.end; ++f) {
                 int i;
                 cv::Mat new_column;
-                cv::Mat1f new_grad_x_column;
                 for (int j = 0; j < width_; ++j) {
                     i = seam[j];
                     if (i + 1 != height_) {
