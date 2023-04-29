@@ -112,6 +112,7 @@ int main(int argc, char** argv) {
 
 void seamCarving::resizeContent(double horizontal_factor, double vertical_factor) {
     if (vertical_factor < 1) {
+        std::cout << "Vertical:\n";
         removeHorizontalSeamsContent(height_ - height_ * vertical_factor);
         cv::Rect roi(0, 0, width_full_, height_full_);
         for (auto &image : video_)
@@ -119,6 +120,7 @@ void seamCarving::resizeContent(double horizontal_factor, double vertical_factor
     }
 
     if (horizontal_factor < 1) {
+        std::cout << "Horizontal:\n";
         removeVerticalSeamsContent(width_ - width_ * horizontal_factor);
         cv::Rect roi(0, 0, width_full_, height_full_);
         for (auto &image : video_)
@@ -131,7 +133,10 @@ bool seamCarving::loadContent(const std::string &link) {
     cv::Mat3b frame;
 
     fps_ = capture.get(cv::CAP_PROP_FPS);
-    video_.resize(capture.get(cv::CAP_PROP_FRAME_COUNT));
+    if ((int) capture.get(cv::CAP_PROP_FRAME_COUNT) >= 1)
+        video_.resize(capture.get(cv::CAP_PROP_FRAME_COUNT));
+    else
+        video_.resize(1);
 
     if(!capture.isOpened()) {
         std::cerr << "Error when reading the file\n";
