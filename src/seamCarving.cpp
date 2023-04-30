@@ -128,7 +128,7 @@ int main(int argc, char** argv) {
     if (show_result)
         sc.showcontent(sc.video_, "Result");
 
-    Returns 0 to indicate successful execution.
+    /* Returns 0 to indicate successful execution. */
     return 0;
 }
 
